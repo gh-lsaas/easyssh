@@ -55,7 +55,7 @@ jobs:
         run: pnpm tauri build-desktop --bundles ${{ matrix.bundles }}
       - if: matrix.platform == 'android'
         run: pnpm tauri build-android
-      - name: Prepare Android release APK
+      - name: Sign Android release APK
         if: matrix.platform == 'android'
         shell: bash
         env:
@@ -74,11 +74,7 @@ jobs:
           mkdir -p release-assets
           version=$(node -p 'require("./package.json").version')
           output="release-assets/easyssh-${version}-android-arm64"
-          if [[ -z "$ANDROID_KEYSTORE_BASE64" ]]; then
-            cp "${apks[0]}" "${output}-unsigned.apk"
-            echo "::notice::The Android asset is unsigned. Configure Android signing secrets to publish an installable APK."
-            exit 0
-          fi
+          : "${ANDROID_KEYSTORE_BASE64:?Set the ANDROID_KEYSTORE_BASE64 repository secret}"
           : "${ANDROID_KEYSTORE_PASSWORD:?Missing Android keystore password}"
           : "${ANDROID_KEY_ALIAS:?Missing Android key alias}"
           export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
@@ -91,6 +87,7 @@ jobs:
             --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
             --out "${output}.apk" "$RUNNER_TEMP/easyssh-aligned.apk"
           "$tools/apksigner" verify "${output}.apk"
+          "$tools/zipalign" -c -P 16 4 "${output}.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}
