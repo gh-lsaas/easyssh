@@ -1,0 +1,20 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "easyssh",
+        "width": 390,
+        "height": 800,
+        "minWidth": 320,
+        "minHeight": 400
+      }
+    ]
+  },
+  "bundle": {
+    "targets": "all",
+    "android": {
+      "minSdkVersion": 24
+    }
+  }
+}

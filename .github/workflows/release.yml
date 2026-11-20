@@ -1,0 +1,121 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, platform: windows, bundles: 'nsis,msi' }
+          - { os: ubuntu-22.04, platform: linux, bundles: 'deb,appimage' }
+          - { os: macos-15, platform: macos-arm64, bundles: 'dmg' }
+          - { os: ubuntu-24.04, platform: android }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.21.0'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - if: github.ref_type == 'tag'
+        run: node scripts/release.mjs --check
+      - run: pnpm test
+      - if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev libdbus-1-dev libssl-dev
+      - if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          choco install strawberryperl -y --no-progress
+          "OPENSSL_SRC_PERL=C:\Strawberry\perl\bin\perl.exe" >> $env:GITHUB_ENV
+      - if: matrix.platform == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - if: matrix.platform == 'android'
+        shell: bash
+        run: |
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+          echo "NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          rustup target add aarch64-linux-android
+      - if: matrix.platform != 'android'
+        run: pnpm tauri build-desktop --bundles ${{ matrix.bundles }}
+      - if: matrix.platform == 'android'
+        run: pnpm tauri build-android
+      - name: Prepare Android release APK
+        if: matrix.platform == 'android'
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          apks=(src-tauri/gen/android/app/build/outputs/apk/**/release/*.apk)
+          if (( ${#apks[@]} != 1 )); then
+            echo "::error::Expected one ARM64 release APK, found ${#apks[@]}."
+            exit 1
+          fi
+          mkdir -p release-assets
+          version=$(node -p 'require("./package.json").version')
+          output="release-assets/easyssh-${version}-android-arm64"
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" ]]; then
+            cp "${apks[0]}" "${output}-unsigned.apk"
+            echo "::notice::The Android asset is unsigned. Configure Android signing secrets to publish an installable APK."
+            exit 0
+          fi
+          : "${ANDROID_KEYSTORE_PASSWORD:?Missing Android keystore password}"
+          : "${ANDROID_KEY_ALIAS:?Missing Android key alias}"
+          export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
+          keystore=$(mktemp)
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/zipalign" -P 16 -f 4 "${apks[0]}" "$RUNNER_TEMP/easyssh-aligned.apk"
+          "$tools/apksigner" sign --ks "$keystore" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --out "${output}.apk" "$RUNNER_TEMP/easyssh-aligned.apk"
+          "$tools/apksigner" verify "${output}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.dmg
+            release-assets/*.apk
+  publish:
+    if: github.ref_type == 'tag' && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -d '' files < <(find artifacts -type f -print0)
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" --verify-tag --generate-notes
+          fi
