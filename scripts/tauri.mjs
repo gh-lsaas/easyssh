@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { cpSync, existsSync } from 'node:fs';
 import { join, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,7 +12,7 @@ function run(...args) {
 }
 function initAndroid(args) {
   run('android', 'init', '--ci', ...args);
-  run('icon', 'public/easyssh-logo.png');
+  cpSync('src-tauri/icons/android', 'src-tauri/gen/android/app/src/main/res', { recursive: true });
 }
 function android(action, args) {
   const ndk = process.env.NDK_HOME ?? process.env.ANDROID_NDK_HOME ?? process.env.ANDROID_NDK_ROOT;

@@ -103,7 +103,7 @@ The public name is now easyssh. The application ID, saved connection locations, 
 
 The Rust library has Tauri's mobile entry point, with an Android configuration overlay and phone layout: connection drawer, full-screen file editor, safe-area spacing, keyboard-aware viewport, and an extra terminal key row. Native desktop menus are skipped on mobile; editing is available through host buttons and long press.
 
-Install Android Studio and use its SDK Manager to install Android SDK Platform 36, Build-Tools 36.0.0, NDK 28.2.13676358, Platform-Tools, and the command-line tools. Set `ANDROID_HOME` to the SDK directory and `NDK_HOME` to its `ndk/28.2.13676358` directory. Use JDK 17, as in CI, or the Java runtime included with Android Studio.
+Install Android Studio and use its SDK Manager to install Android SDK Platform 37, Build-Tools 37.0.0, NDK 28.2.13676358, Platform-Tools, and the command-line tools. Set `ANDROID_HOME` to the SDK directory and `NDK_HOME` to its `ndk/28.2.13676358` directory. Use JDK 21, as in CI, or the Java runtime included with Android Studio.
 
 ```powershell
 pnpm install --frozen-lockfile
