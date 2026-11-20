@@ -402,7 +402,7 @@ mod platform {
   ) -> Result<(Process, File, File), String> {
     unsafe {
       let (mut master, mut slave) = (-1, -1);
-      let size = libc::winsize {
+      let mut size = libc::winsize {
         ws_row: r.clamp(2, 300) as u16,
         ws_col: c.clamp(2, 500) as u16,
         ws_xpixel: 0,
@@ -412,8 +412,8 @@ mod platform {
         &mut master,
         &mut slave,
         std::ptr::null_mut(),
-        std::ptr::null(),
-        &size,
+        std::ptr::null_mut(),
+        &raw mut size,
       ) < 0
       {
         return Err(err(std::io::Error::last_os_error()));
@@ -433,7 +433,7 @@ mod platform {
         if libc::setsid() < 0 {
           return Err(std::io::Error::last_os_error());
         }
-        if libc::ioctl(0, libc::TIOCSCTTY, 0) < 0 {
+        if libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
           return Err(std::io::Error::last_os_error());
         }
         Ok(())
