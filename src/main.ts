@@ -121,7 +121,7 @@ function confirmAction(title: string, message: string, fingerprint = ''): Promis
 function edit(p?: Profile) {
   const form = $<HTMLFormElement>('#connection-form'); form.reset(); $('#form-error').textContent = '';
   for (const key of ['id','name','host','port','username','group','auth','keyPath'] as const) (form.elements.namedItem(key) as HTMLInputElement).value = String(p?.[key] ?? (key === 'port' ? 22 : key === 'auth' ? 'password' : ''));
-  if (platformInfo.mobile) $<HTMLInputElement>('[name="remember"]').checked = false;
+  if (platformInfo.mobile) $<HTMLInputElement>('[name="remember"]').checked = platformInfo.os === 'android';
   $('#editor-title').textContent = p ? 'Edit connection' : 'New connection'; $('#delete-connection').hidden = !p; authChange(); $<HTMLDialogElement>('#editor').showModal();
 }
 function authChange() { const isKey = ($('[name="auth"]') as HTMLSelectElement).value === 'key'; $('#key-field').hidden = !isKey; $('#secret-label').textContent = isKey ? 'Key passphrase (optional)' : 'Password'; ($('[name="keyPath"]') as HTMLInputElement).required = isKey; }
@@ -158,7 +158,7 @@ $('#search').oninput = e => { filter = (e.target as HTMLInputElement).value.toLo
 function askSecret(p: Profile): Promise<string | null> {
   $('#session-secret-label').textContent = p.auth === 'key' ? 'Key passphrase (optional)' : 'Password';
   const input = $<HTMLInputElement>('#session-secret'); input.value = ''; input.required = p.auth === 'password';
-  const remember = $<HTMLInputElement>('#session-remember'); remember.checked = !platformInfo.mobile;
+  const remember = $<HTMLInputElement>('#session-remember'); remember.checked = !platformInfo.mobile || platformInfo.os === 'android';
   $('#session-secret-error').textContent = '';
   const dialog = $<HTMLDialogElement>('#secret-dialog'); dialog.showModal(); input.focus();
   return new Promise(resolve => {

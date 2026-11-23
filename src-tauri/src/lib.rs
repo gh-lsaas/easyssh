@@ -65,9 +65,25 @@ fn err(e: impl std::fmt::Display) -> String {
 fn entry(id: &str, kind: &str) -> Result<keyring::Entry, String> {
   keyring::Entry::new("fi.eassh.desktop", &format!("{id}:{kind}")).map_err(err)
 }
-#[cfg(mobile)]
+#[cfg(target_os = "android")]
+use keyring_core as keyring;
+#[cfg(target_os = "android")]
+fn entry(id: &str, kind: &str) -> Result<keyring::Entry, String> {
+  // Tauri initializes ndk-context before commands and SSH workers can run.
+  static STORE: std::sync::OnceLock<std::sync::Arc<keyring::CredentialStore>> = std::sync::OnceLock::new();
+  let store = match STORE.get() {
+    Some(store) => store.clone(),
+    None => {
+      let store: std::sync::Arc<keyring::CredentialStore> = android_native_keyring_store::Store::new().map_err(err)?;
+      let _ = STORE.set(store.clone());
+      STORE.get().cloned().unwrap_or(store)
+    }
+  };
+  keyring::Entry::new_in_store(&store, "fi.eassh.desktop", &format!("{id}:{kind}")).map_err(err)
+}
+#[cfg(all(mobile, not(target_os = "android")))]
 struct MobileSecret;
-#[cfg(mobile)]
+#[cfg(all(mobile, not(target_os = "android")))]
 impl MobileSecret {
   fn get_password(&self) -> Result<String, String> {
     Err("Saved credentials are not supported on mobile yet. Use session-only credentials.".into())
@@ -76,7 +92,7 @@ impl MobileSecret {
     Err("Saved credentials are not supported on mobile yet. Uncheck Save secret.".into())
   }
 }
-#[cfg(mobile)]
+#[cfg(all(mobile, not(target_os = "android")))]
 fn entry(_: &str, _: &str) -> Result<MobileSecret, String> {
   Ok(MobileSecret)
 }
@@ -122,7 +138,7 @@ fn handshake(p: &Profile) -> Result<(Session, String), String> {
 fn list_profiles(state: State<AppState>) -> Result<Vec<Profile>, String> {
   Ok(state.store.lock().map_err(err)?.profiles.clone())
 }
-#[cfg(not(mobile))]
+#[cfg(any(not(mobile), target_os = "android"))]
 fn stored_secret(id: &str, auth: &str) -> Result<String, String> {
   match entry(id, auth)?.get_password() {
     Ok(secret) => Ok(secret),
@@ -130,7 +146,7 @@ fn stored_secret(id: &str, auth: &str) -> Result<String, String> {
     Err(e) => Err(err(e)),
   }
 }
-#[cfg(mobile)]
+#[cfg(all(mobile, not(target_os = "android")))]
 fn stored_secret(_: &str, _: &str) -> Result<String, String> {
   Ok(String::new())
 }
@@ -200,7 +216,7 @@ fn save_profile(
 #[tauri::command]
 fn delete_profile(app: tauri::AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
   let mut store = state.store.lock().map_err(err)?;
-  #[cfg(not(mobile))]
+  #[cfg(any(not(mobile), target_os = "android"))]
   for kind in ["password", "key"] {
     match entry(&id, kind)?.delete_credential() {
       Ok(()) | Err(keyring::Error::NoEntry) => (),
