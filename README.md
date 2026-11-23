@@ -111,7 +111,7 @@ rustup target add aarch64-linux-android
 pnpm android:build
 ```
 
-The build initializes the Gradle project on a fresh checkout and writes the ARM64 APK under `src-tauri/gen/android/app/build/outputs/apk/`. Use `pnpm android:dev` to run on a connected device or emulator. Android credentials are currently session-only. Secure Keystore persistence and private-key importing through Android's file picker remain pending.
+The build initializes the Gradle project on a fresh checkout and writes the ARM64 APK under `src-tauri/gen/android/app/build/outputs/apk/`. Use `pnpm android:dev` to run on a connected device or emulator. Android saves passwords and private-key passphrases in encrypted storage backed by Android Keystore when Save secret is selected. Existing connections can save their password through Edit or Connect with credentials. Private-key importing through Android's file picker remains pending.
 
 Android local shell code uses `/system/bin/sh` in the app sandbox. Bash is not bundled, and a Termux-style package manager/userland is not included. Modern Android requires executable code to be packaged in the APK; downloaded executables in writable app storage are not used. If you have an Android-compatible Bash executable and required shared libraries for your ABI, run the packaging script after Android initialization:
 
