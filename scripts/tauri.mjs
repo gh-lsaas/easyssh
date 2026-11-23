@@ -30,6 +30,7 @@ function android(action, args) {
       !existsSync('src-tauri/gen/android/gradlew.bat')) {
     initAndroid(action === 'build' ? ['--skip-targets-install'] : []);
   }
+  cpSync('src-tauri/icons/android', 'src-tauri/gen/android/app/src/main/res', { recursive: true });
   if (action === 'build') {
     run('android', 'build', '--apk', '--target', 'aarch64', ...args);
   } else {

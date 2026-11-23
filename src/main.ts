@@ -28,7 +28,7 @@ const icons = {
 };
 $('#app').innerHTML = `
   <aside id="connections-panel" aria-label="Saved connections">
-    <div class="list-header"><span class="wordmark"><img id="brand-logo" src="/easyssh-logo.png" alt="" width="24" height="24">easyssh</span><h1>Connections</h1><button class="icon" id="new" title="New connection (Ctrl+N)" aria-label="New connection">${icons.add}</button></div>
+    <div class="list-header"><span class="wordmark"><img id="brand-logo" src="/easyssh-logo.svg" alt="" width="24" height="24">easyssh</span><h1>Connections</h1><button class="icon" id="new" title="New connection (Ctrl+N)" aria-label="New connection">${icons.add}</button></div>
     <div class="search"><input id="search" type="search" placeholder="Search connections" aria-label="Search connections" title="Find connection (Ctrl+K)" autocomplete="off"></div>
     <div id="host-list"></div>
   </aside>
@@ -44,7 +44,10 @@ $('#app').innerHTML = `
       </section>
     </div>
     <aside id="files-panel" aria-label="File browser and editor" hidden></aside></div>
-    <div id="touch-keys" aria-label="Terminal keys"><button data-key="escape">Esc</button><button data-key="tab">Tab</button><button data-key="interrupt">Ctrl+C</button><button data-key="up" aria-label="Up">&uarr;</button><button data-key="down" aria-label="Down">&darr;</button><button data-key="left" aria-label="Left">&larr;</button><button data-key="right" aria-label="Right">&rarr;</button><button id="touch-paste">Paste</button></div>
+    <div id="touch-keys" role="group" aria-label="Terminal keys">
+      <div class="touch-actions"><button data-key="escape">Esc</button><button data-key="tab">Tab</button><button data-key="interrupt">Ctrl+C</button><button id="touch-paste">Paste</button></div>
+      <div class="touch-directions" role="group" aria-label="Arrow keys"><button data-key="up" aria-label="Up">&uarr;</button><button data-key="left" aria-label="Left">&larr;</button><button data-key="down" aria-label="Down">&darr;</button><button data-key="right" aria-label="Right">&rarr;</button></div>
+    </div>
     <footer><span id="session-status">No active session</span><div class="session-facts"><span id="session-address"></span><span id="session-time"></span><span id="session-size"></span><span>UTF-8</span></div></footer>
   </main>
   <dialog id="shell-dialog"><form id="shell-form"><h2>Local shell</h2><label>Shell<select id="shell-select" required></select></label><p id="shell-help" class="hint"></p><div class="dialog-actions"><button type="button" id="shell-cancel">Cancel</button><button type="submit" class="primary">Open terminal</button></div></form></dialog>

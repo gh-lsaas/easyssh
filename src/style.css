@@ -156,8 +156,17 @@ body.dragging-tab { cursor: grabbing; user-select: none; }
 #file-status { flex-shrink: 0; font-size: 10px; line-height: 1.5; color: #aaa; padding: 7px 10px; margin: 0; max-height: 72px; overflow: auto; }
 #touch-keys { display: none; }
 @media (max-width: 700px), (pointer: coarse) {
-  #touch-keys { display: flex; gap: 4px; padding: 5px max(6px,env(safe-area-inset-right)) 5px max(6px,env(safe-area-inset-left)); overflow-x: auto; flex-shrink: 0; background: #202020; }
-  #touch-keys button { min-width: 42px; min-height: 36px; padding: 5px 9px; font: 11px var(--mono); }
+  #touch-keys { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px max(8px,env(safe-area-inset-right)) 8px max(8px,env(safe-area-inset-left)); flex-shrink: 0; min-width: 0; background: #19212a; border-top: 1px solid #34414c; }
+  .touch-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; flex: 1; min-width: 0; }
+  .touch-directions { display: grid; grid-template-columns: repeat(3,40px); grid-template-rows: repeat(2,38px); gap: 4px; flex-shrink: 0; }
+  .touch-directions [data-key="up"] { grid-column: 2; }
+  .touch-directions [data-key="left"] { grid-column: 1; grid-row: 2; }
+  .touch-directions [data-key="down"] { grid-column: 2; grid-row: 2; }
+  .touch-directions [data-key="right"] { grid-column: 3; grid-row: 2; }
+  #touch-keys button { min-width: 0; min-height: 38px; padding: 5px 6px; font: 12px var(--mono); border-radius: 8px; background: #25313d; border-color: #41515f; touch-action: manipulation; }
+  #touch-keys button:active { background: #365445; border-color: #80e2bd; }
+  #touch-keys button:focus-visible { outline-offset: -3px; }
+  #touch-keys .touch-directions button { font-size: 20px; }
   .tab > [role="tab"] { padding: 12px 9px; }
   .icon { min-width: 36px; min-height: 36px; }
   .host-connect { min-height: 36px; }
