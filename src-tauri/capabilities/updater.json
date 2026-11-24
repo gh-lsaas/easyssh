@@ -1,0 +1,14 @@
+{
+  "identifier": "desktop-updater",
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macOS"
+  ],
+  "permissions": [
+    "updater:default"
+  ]
+}

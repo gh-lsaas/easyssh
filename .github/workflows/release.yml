@@ -13,7 +13,7 @@ jobs:
         include:
           - { os: windows-latest, platform: windows, bundles: 'nsis,msi' }
           - { os: ubuntu-22.04, platform: linux, bundles: 'deb,appimage' }
-          - { os: macos-15, platform: macos-arm64, bundles: 'dmg' }
+          - { os: macos-15, platform: macos-arm64, bundles: 'app,dmg' }
           - { os: ubuntu-24.04, platform: android }
     runs-on: ${{ matrix.os }}
     steps:
@@ -52,6 +52,8 @@ jobs:
           echo "NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
           rustup target add aarch64-linux-android
       - if: matrix.platform != 'android'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: pnpm tauri build-desktop --bundles ${{ matrix.bundles }}
       - if: matrix.platform == 'android'
         run: pnpm tauri build-android
@@ -99,6 +101,8 @@ jobs:
             src-tauri/target/release/bundle/**/*.AppImage
             src-tauri/target/release/bundle/**/*.dmg
             release-assets/*.apk
+            src-tauri/target/release/bundle/**/*.sig
+            src-tauri/target/release/bundle/**/*.app.tar.gz
   publish:
     if: github.ref_type == 'tag' && github.event_name == 'push'
     needs: build
@@ -110,6 +114,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/update-manifest.mjs
       - shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

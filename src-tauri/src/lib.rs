@@ -478,7 +478,10 @@ fn disconnect(state: State<AppState>, id: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_opener::init())
     .setup(|app| {
+      #[cfg(desktop)]
+      app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
       let path = app.path().app_data_dir()?.join("connections.json");
       let store = match fs::read(path) {
         Ok(bytes) => serde_json::from_slice(&bytes)?,

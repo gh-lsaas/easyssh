@@ -10,6 +10,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
+import { startUpdates } from './updates';
 
 type Profile = { id: string; name: string; host: string; port: number; username: string; auth: string; keyPath: string; group: string };
 type Session = { kind: 'ssh' | 'local'; id: string; profile: Profile; terminal: Terminal; fit: FitAddon; element: HTMLElement; status: string; connectedAt?: number; allowMultilinePaste?: boolean };
@@ -557,12 +558,13 @@ async function init() {
   if (platformInfo.mobile || matchMedia('(max-width: 700px)').matches) togglePanel(false);
   $('#shell-select').innerHTML = platformInfo.shells.map(shell => `<option value="${esc(shell.id)}">${esc(shell.label)}</option>`).join('');
   $('#shell-help').textContent = platformInfo.os === 'android' ? 'Runs inside the app sandbox. Android shell is available; Bash appears when its runtime is packaged in the APK.' : 'Installed shells run locally in a pseudoterminal. WSL uses your default installed distribution.';
-  if (platformInfo.mobile) {
+  if (platformInfo.mobile && platformInfo.os !== 'android') {
     document.querySelectorAll<HTMLInputElement>('[name="remember"], #session-remember').forEach(input => { input.checked=false; input.disabled=true; });
     $('#connection-form .hint').textContent = 'Mobile currently uses session-only credentials; passwords are not saved.';
-  } else { await createContextMenus(); }
+  } else if (!platformInfo.mobile) { await createContextMenus(); }
   await listen<{id:string;data:number[]}>('ssh-data',({payload}) => { sessions.find(s => s.id === payload.id)?.terminal.write(new Uint8Array(payload.data)); });
   await listen<{id:string;status:string}>('ssh-status',({payload}) => { const s = sessions.find(s => s.id === payload.id); if(s) { s.status = payload.status; if(s.status === 'Connected') s.connectedAt = Date.now(); if(s.status !== 'Connected') s.terminal.writeln(`\r\n\x1b[90m${s.status}\x1b[0m`); else { fitVisible(); invoke('resize',{id:s.id,cols:s.terminal.cols,rows:s.terminal.rows}).catch(notify); } renderTabs(); renderHosts(); } });
   await reload();
+  startUpdates(platformInfo.os, platformInfo.mobile);
 }
 init().catch(e => { renderHosts(); notify(`Could not open workspace: ${e}. Run with pnpm tauri dev.`); });
