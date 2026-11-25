@@ -5,6 +5,7 @@ const MAX_FILE: usize = 1024 * 1024;
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub(crate) enum FileRequest {
+  Upload { path: String, name: String, data: String },
   Download { path: String, #[serde(default)] sudo: bool },
   ProtectedRead { path: String },
   List {
@@ -22,10 +23,15 @@ pub(crate) enum FileRequest {
 impl FileRequest {
   fn validate(&self) -> Result<(), String> {
     let path = match self {
-      Self::Download { path, .. } | Self::ProtectedRead { path } | Self::List { path } | Self::Read { path } | Self::Write { path, .. } => path,
+      Self::Upload { path, .. } | Self::Download { path, .. } | Self::ProtectedRead { path } | Self::List { path } | Self::Read { path } | Self::Write { path, .. } => path,
     };
     if path.is_empty() || path.len() > 4096 || path.contains('\0') {
       return Err("Invalid file path.".into());
+    }
+    if let Self::Upload { name, data, .. } = self {
+      if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\', '\0']) || data.len()>45*1024*1024 {
+        return Err("Invalid upload name or file larger than 32 MiB.".into());
+      }
     }
     if let Self::Write {
       content, revision, ..
@@ -103,13 +109,27 @@ pub(crate) fn remote_operation(session: &Session, request: FileRequest, password
     .sftp()
     .map_err(|e| format!("SFTP is unavailable: {e}"))?;
   let path = match &request {
-    FileRequest::Download { path, .. } | FileRequest::ProtectedRead { path } | FileRequest::List { path } | FileRequest::Read { path } | FileRequest::Write { path, .. } => {
+    FileRequest::Upload { path, .. } | FileRequest::Download { path, .. } | FileRequest::ProtectedRead { path } | FileRequest::List { path } | FileRequest::Read { path } | FileRequest::Write { path, .. } => {
       path
     }
   };
   let canonical = sftp.realpath(Path::new(path)).map_err(err)?;
   let display = canonical.to_str().ok_or("Path is not UTF-8.")?.to_string();
   match request {
+    FileRequest::Upload { name, data, .. } => {
+      let bytes=STANDARD_NO_PAD.decode(data).map_err(err)?;
+      if bytes.len()>32*1024*1024 {return Err("Uploads support files up to 32 MiB.".into());}
+      let target=canonical.join(name);
+      let temp=canonical.join(format!(".easyssh-upload-{}",uuid::Uuid::new_v4()));
+      let result=(|| {
+        let mut file=sftp.open_mode(&temp,ssh2::OpenFlags::WRITE|ssh2::OpenFlags::CREATE|ssh2::OpenFlags::EXCLUSIVE,0o600,ssh2::OpenType::File).map_err(err)?;
+        file.write_all(&bytes).map_err(err)?;file.close().map_err(err)?;
+        // No overwrite flags: a concurrently created destination must remain intact.
+        sftp.rename(&temp,&target,Some(ssh2::RenameFlags::empty())).map_err(|e|format!("Upload was not installed (destination may already exist): {e}"))?;
+        Ok(json!({"path":target.to_string_lossy()}))
+      })();
+      if result.is_err(){let _=sftp.unlink(&temp);}result
+    }
     FileRequest::ProtectedRead { .. } => unreachable!(),
     FileRequest::Download { .. } => Ok(json!({"data":STANDARD_NO_PAD.encode(transfer_read(sftp.open(&canonical).map_err(err)?)?)})),
     FileRequest::List { .. } => {
@@ -208,7 +228,7 @@ fn display_path(path: &Path) -> String {
 pub(crate) fn local_operation(home: &Path, request: FileRequest) -> Result<Value, String> {
   request.validate()?;
   let path = match &request {
-    FileRequest::Download { path, .. } | FileRequest::ProtectedRead { path } | FileRequest::List { path } | FileRequest::Read { path } | FileRequest::Write { path, .. } => {
+    FileRequest::Upload { path, .. } | FileRequest::Download { path, .. } | FileRequest::ProtectedRead { path } | FileRequest::List { path } | FileRequest::Read { path } | FileRequest::Write { path, .. } => {
       path
     }
   };
@@ -221,6 +241,7 @@ pub(crate) fn local_operation(home: &Path, request: FileRequest) -> Result<Value
   .map_err(err)?;
   let display = display_path(&canonical);
   match request {
+    FileRequest::Upload { .. } => Err("Uploads are available for SSH sessions only.".into()),
     FileRequest::ProtectedRead { .. } | FileRequest::Download { sudo: true, .. } => Err("Sudo file access is available for remote SSH sessions only.".into()),
     FileRequest::Download { .. } => Ok(json!({"data":STANDARD_NO_PAD.encode(transfer_read(fs::File::open(&canonical).map_err(err)?)?)})),
     FileRequest::List { .. } => {

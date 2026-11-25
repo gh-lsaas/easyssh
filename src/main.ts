@@ -88,7 +88,7 @@ $('#bridge-enabled').onchange=async()=>{
   bridgeEnabled=checkbox.checked;
   const area=$<HTMLTextAreaElement>('#bridge-config');area.value=config??'';area.hidden=!config;
   $('#bridge-status').textContent=bridgeEnabled?'Agent bridge enabled. Copy the configuration to the MCP launcher.':'Agent access disabled';
-  settingsButton.textContent=bridgeEnabled?'Settings · Agent access on':'Settings';
+  settingsButton.textContent=bridgeEnabled?'Settings - Agent access on':'Settings';
  }catch(e){checkbox.checked=false;bridgeEnabled=false;notify(e);}
 };
 setInterval(async()=>{

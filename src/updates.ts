@@ -31,7 +31,7 @@ export function startUpdates(os: string, mobile: boolean) {
     busy = true;
     checkButton.disabled = true;
     install.hidden = true;
-    if (manual) showStatus('Checking for updates…');
+    if (manual) showStatus('Checking for updatesâ€¦');
     try {
       if (mobile) {
         if (os !== 'android') { if (manual) showStatus('Updates are unavailable on this platform.'); return; }

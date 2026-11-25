@@ -1,5 +1,6 @@
 import { save } from '@tauri-apps/plugin-dialog';
-import { writeFile } from '@tauri-apps/plugin-fs';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { readFile, writeFile } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 type FileEntry = {name:string;path:string;directory:boolean;size:number|null};
 type Directory = {path:string;parent:string;entries:FileEntry[]};
@@ -36,7 +37,45 @@ export class FileEditor {
       if(e.key==='Tab'&&!e.ctrlKey&&!e.altKey&&!e.metaKey){e.preventDefault();const a=this.area.selectionStart,b=this.area.selectionEnd;this.area.setRangeText('  ',a,b,'end');this.refreshDirty();}
     });
     panel.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();e.stopPropagation();void this.save();}});
+    void getCurrentWebview().onDragDropEvent(async event=>{
+      if(this.panel.hidden)return;
+      const payload=event.payload;
+      const rect=this.panel.getBoundingClientRect();
+      const inside='position' in payload && payload.position.x/devicePixelRatio>=rect.left && payload.position.x/devicePixelRatio<=rect.right && payload.position.y/devicePixelRatio>=rect.top && payload.position.y/devicePixelRatio<=rect.bottom;
+      if(inside&&(payload.type==='over'||payload.type==='enter'))this.panel.classList.add('upload-hover');
+      else this.panel.classList.remove('upload-hover');
+      if(inside&&event.payload.type==='drop')await this.uploadPaths(event.payload.paths);
+    }).catch(()=>{});
     window.addEventListener('beforeunload',e=>{if(this.dirty()){e.preventDefault();e.returnValue='';}});
+  }
+  private contextMenu(entry:FileEntry,x:number,y:number){
+    document.querySelector('#file-context-menu')?.remove();
+    const menu=document.createElement('div');menu.id='file-context-menu';menu.setAttribute('role','menu');
+    for(const [label,action] of [['Download',()=>this.download(entry.path,false)],['Download with sudo',()=>this.download(entry.path,true)],['Read with sudo',()=>this.open(entry.path,true)]] as const){
+      const button=document.createElement('button');button.textContent=label;button.setAttribute('role','menuitem');
+      button.onclick=()=>{menu.remove();void action();};menu.append(button);
+    }
+    document.body.append(menu);const rect=menu.getBoundingClientRect();
+    menu.style.left=`${Math.max(4,Math.min(x,innerWidth-rect.width-4))}px`;menu.style.top=`${Math.max(4,Math.min(y,innerHeight-rect.height-4))}px`;
+    menu.querySelector('button')?.focus();
+    const close=(e:Event)=>{if(e instanceof KeyboardEvent&&e.key!=='Escape')return;if(e.type==='pointerdown'&&menu.contains(e.target as Node))return;menu.remove();document.removeEventListener('pointerdown',close);document.removeEventListener('keydown',close);};
+    document.addEventListener('pointerdown',close);document.addEventListener('keydown',close);
+  }
+  private async uploadPaths(paths:string[]){
+    if(this.busy||this.saving||!this.directory)return;
+    const directory=this.directory,session=this.session;
+    if(!await this.hooks.confirm('Upload files?',`Upload ${paths.length} file(s) to ${directory.path}? Existing files are kept. Rename a file before uploading a replacement.`))return;
+    if(session!==this.session)return;
+    this.busy=true;
+    try{
+      for(const path of paths){
+        const name=path.split(/[\\/]/).pop()!;this.status.textContent=`Uploading ${name}…`;
+        const bytes=await readFile(path);if(bytes.length>32*1024*1024)throw new Error('Uploads support files up to 32 MiB');
+        let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+        await this.request({operation:'upload',path:directory.path,name,data:btoa(binary).replace(/=+$/,'')});
+      }
+      this.status.textContent='Upload complete';
+    }catch(e){this.hooks.notify(e);}finally{this.busy=false;await this.list(directory.path);}
   }
   private dirty(){return !!this.document&&this.area.value!==this.document.original;}
   private refreshDirty(){this.saveButton.disabled=this.saving||this.area.readOnly||!this.dirty();this.fileName.textContent=this.document?`${this.document.path}${this.dirty()?' â€¢ Unsaved':''}`:'No file open';}
@@ -65,16 +104,11 @@ export class FileEditor {
         if(!entry.directory){const size=document.createElement('small');size.textContent=entry.size===null?'':entry.size<1024?`${entry.size} B`:`${Math.ceil(entry.size/1024)} KB`;button.append(size);}
         button.onclick=()=>{if(entry.directory)void this.list(entry.path);else void this.open(entry.path);};list.append(button);
         if (!entry.directory) {
-          const actions = document.createElement('div');
-          actions.className = 'file-transfer-actions';
-          for (const [label, sudo, read] of [['Download',false,false],['Download with sudo',true,false],['Read with sudo',true,true]] as const) {
-            const action = document.createElement('button');
-            action.textContent = label;
-            action.setAttribute('aria-label', `${label}: ${entry.name}`);
-            action.onclick = () => { if (read) void this.open(entry.path, true); else void this.download(entry.path, sudo); };
-            actions.append(action);
-          }
-          list.append(actions);
+          button.oncontextmenu=e=>{e.preventDefault();this.contextMenu(entry,e.clientX,e.clientY);};
+          button.onkeydown=e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();const rect=button.getBoundingClientRect();this.contextMenu(entry,rect.left,rect.bottom);}};
+          let hold:ReturnType<typeof setTimeout>;
+          button.onpointerdown=e=>{if(e.pointerType==='touch')hold=setTimeout(()=>this.contextMenu(entry,e.clientX,e.clientY),600);};
+          button.onpointerup=button.onpointercancel=button.onpointermove=()=>clearTimeout(hold);
         }
       });
       if(!directory.entries.length){const empty=document.createElement('p');empty.textContent='Empty directory';list.append(empty);}
@@ -93,7 +127,7 @@ export class FileEditor {
   private async download(path:string,sudo:boolean){
     if(this.busy||this.saving)return;
     if(sudo&&!await this.hooks.confirm('Download protected file?','Use the SSH password for this connection with sudo to download this file?'))return;
-    this.busy=true;this.status.textContent='Downloading…';
+    this.busy=true;this.status.textContent='Downloadingâ€¦';
     try{
       const result=await this.request<{data:string}>({operation:'download',path,sudo});
       const binary=atob(result.data);
