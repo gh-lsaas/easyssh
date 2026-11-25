@@ -179,6 +179,7 @@ fn save_profile(
   state: State<AppState>,
   mut connection: Profile,
   secret: Option<String>,
+  clear_secret: Option<bool>,
 ) -> Result<Profile, String> {
   if connection.name.trim().is_empty()
     || connection.host.trim().is_empty()
@@ -199,7 +200,14 @@ fn save_profile(
   } else if !store.profiles.iter().any(|p| p.id == connection.id) {
     return Err("Unknown connection.".into());
   }
-  if let Some(secret) = secret.filter(|s| !s.is_empty()) {
+  if clear_secret.unwrap_or(false) {
+    #[cfg(any(not(mobile), target_os = "android"))]
+    match entry(&connection.id, &connection.auth)?.delete_credential() {
+      Ok(()) | Err(keyring::Error::NoEntry) => (),
+      Err(e) => return Err(err(e)),
+    }
+  }
+  if let Some(secret) = secret.filter(|s| !s.is_empty() && !clear_secret.unwrap_or(false)) {
     if secret.len() > 2400 {
       return Err("Secret is too long for the credential store.".into());
     }

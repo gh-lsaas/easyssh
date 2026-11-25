@@ -195,3 +195,5 @@ body.dragging-tab { cursor: grabbing; user-select: none; }
 #update-banner { position: fixed; z-index: 50; top: max(12px, env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px; border: 1px solid #526779; border-radius: 10px; background: #19212a; box-shadow: 0 8px 24px #0008; }
 #update-banner span { flex: 1 1 180px; }
 #update-banner button { min-height: 44px; }
+
+#check-updates { flex-shrink: 0; margin: 10px; min-height: 44px; background: transparent; font-size: 12px; }

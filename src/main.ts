@@ -59,6 +59,7 @@ $('#app').innerHTML = `
   <label>Authentication<select name="auth"><option value="password">Password</option><option value="key">Private key</option></select></label>
   <label id="key-field" hidden>Private key path<input name="keyPath" placeholder="C:\\Users\\you\\.ssh\\id_ed25519"><small>OpenSSH or PEM private key. The file stays on your disk.</small></label>
   <label><span id="secret-label">Password</span><input name="secret" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved secret"></label>
+  <label class="check"><input name="clearSecret" type="checkbox"> Remove saved password / key passphrase (use an unencrypted key without a passphrase)</label>
   <label class="check"><input name="sudoAutofill" type="checkbox"> Autofill sudo with the SSH password</label><p class="hint">Trusted hosts only. Any remote program can imitate a sudo prompt. Sends once per session for the standard English prompt; key passphrases are never used.</p>
   <label class="check"><input name="remember" type="checkbox" checked> Save secret in the operating system credential store</label><p class="hint">Unsaved secrets are requested when you connect. Blank fields preserve an existing saved secret.</p>
   <p class="form-error" id="form-error" role="alert"></p><div class="dialog-actions"><button type="button" id="delete-connection" class="danger" hidden>Delete connection</button><button type="button" class="close-dialog">Cancel</button><button class="primary" type="submit">Save</button></div></form></dialog>
@@ -123,6 +124,7 @@ function confirmAction(title: string, message: string, fingerprint = ''): Promis
 function edit(p?: Profile) {
   const form = $<HTMLFormElement>('#connection-form'); form.reset(); $('#form-error').textContent = '';
   for (const key of ['id','name','host','port','username','group','auth','keyPath'] as const) (form.elements.namedItem(key) as HTMLInputElement).value = String(p?.[key] ?? (key === 'port' ? 22 : key === 'auth' ? 'password' : ''));
+  $<HTMLInputElement>('[name="clearSecret"]').checked = false;
   $<HTMLInputElement>('[name="sudoAutofill"]').checked = p?.sudoAutofill ?? false;
   if (platformInfo.mobile) $<HTMLInputElement>('[name="remember"]').checked = platformInfo.os === 'android';
   $('#editor-title').textContent = p ? 'Edit connection' : 'New connection'; $('#delete-connection').hidden = !p; authChange(); $<HTMLDialogElement>('#editor').showModal();
@@ -148,7 +150,7 @@ $('#connection-form').onsubmit = async e => {
   e.preventDefault(); const form = e.currentTarget as HTMLFormElement; const data = new FormData(form); const get = (k:string) => String(data.get(k) ?? '');
   const connection: Profile = {id:get('id'),name:get('name').trim(),host:get('host').trim(),port:Number(get('port')),username:get('username').trim(),auth:get('auth'),keyPath:get('keyPath').trim(),group:get('group').trim(),sudoAutofill:data.has('sudoAutofill')};
   const submit = form.querySelector<HTMLButtonElement>('[type="submit"]')!; submit.disabled = true;
-  try { const p = await invoke<Profile>('save_profile',{connection,secret:data.has('remember') ? get('secret') : null}); ephemeral.delete(p.id); if (!data.has('remember') && get('secret')) ephemeral.set(p.id,get('secret')); selected = p.id; form.reset(); $<HTMLDialogElement>('#editor').close(); await reload(); } catch(e) { $('#form-error').textContent = String(e); } finally { submit.disabled = false; }
+  try { const p = await invoke<Profile>('save_profile',{connection,secret:data.has('clearSecret') ? null : data.has('remember') ? get('secret') : null,clearSecret:data.has('clearSecret')}); ephemeral.delete(p.id); if (!data.has('clearSecret') && !data.has('remember') && get('secret')) ephemeral.set(p.id,get('secret')); selected = p.id; form.reset(); $<HTMLDialogElement>('#editor').close(); await reload(); } catch(e) { $('#form-error').textContent = String(e); } finally { submit.disabled = false; }
 };
 let hostPress: ReturnType<typeof setTimeout> | undefined;
 $('#host-list').addEventListener('pointerdown', e => {
@@ -556,6 +558,7 @@ document.addEventListener('keydown', e => {
 });
 async function init() {
   platformInfo = await invoke('list_shells');
+  startUpdates(platformInfo.os, platformInfo.mobile);
   document.body.classList.toggle('mobile',platformInfo.mobile); updateViewport();
   if (platformInfo.mobile || matchMedia('(max-width: 700px)').matches) togglePanel(false);
   $('#shell-select').innerHTML = platformInfo.shells.map(shell => `<option value="${esc(shell.id)}">${esc(shell.label)}</option>`).join('');
@@ -567,6 +570,5 @@ async function init() {
   await listen<{id:string;data:number[]}>('ssh-data',({payload}) => { sessions.find(s => s.id === payload.id)?.terminal.write(new Uint8Array(payload.data)); });
   await listen<{id:string;status:string}>('ssh-status',({payload}) => { const s = sessions.find(s => s.id === payload.id); if(s) { s.status = payload.status; if(s.status === 'Connected') s.connectedAt = Date.now(); if(s.status !== 'Connected') s.terminal.writeln(`\r\n\x1b[90m${s.status}\x1b[0m`); else { fitVisible(); invoke('resize',{id:s.id,cols:s.terminal.cols,rows:s.terminal.rows}).catch(notify); } renderTabs(); renderHosts(); } });
   await reload();
-  startUpdates(platformInfo.os, platformInfo.mobile);
 }
 init().catch(e => { renderHosts(); notify(`Could not open workspace: ${e}. Run with pnpm tauri dev.`); });
