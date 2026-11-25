@@ -458,7 +458,13 @@ document.addEventListener('pointermove', e => {
 document.addEventListener('pointerup', e => {
   const drag = tabDrag; if (!drag || e.pointerId !== drag.pointer) return;
   const drop = drag.drop; cancelTabDrag();
-  if (!drag.moved || !drop || !sessions.some(s => s.id === drag.id)) return;
+  if (!sessions.some(s => s.id === drag.id)) return;
+  if (!drag.moved) {
+    // Pointer capture retargets click to the strip, so activate taps here.
+    activate(drag.id);
+    return;
+  }
+  if (!drop) return;
   if (drop.kind === 'tab') {
     const order = reorderIds(sessions.map(s => s.id),drag.id,drop.target,drop.after);
     sessions = order.map(id => sessions.find(s => s.id === id)!); renderTabs();
