@@ -12,6 +12,8 @@
           "url": "https://github.com/gh-lsaas/easyssh/releases/*"
         }
       ]
-    }
+    },
+    "dialog:allow-save",
+    "fs:allow-write-file"
   ]
 }

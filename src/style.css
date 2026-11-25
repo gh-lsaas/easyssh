@@ -197,3 +197,6 @@ body.dragging-tab { cursor: grabbing; user-select: none; }
 #update-banner button { min-height: 44px; }
 
 #check-updates { flex-shrink: 0; margin: 10px; min-height: 44px; background: transparent; font-size: 12px; }
+
+.file-transfer-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 4px 10px; }
+#file-list .file-transfer-actions button { width: auto; min-height: 36px; border: 1px solid #444; padding: 4px 6px; font-size: 10px; }

@@ -1,3 +1,5 @@
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeFile } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 type FileEntry = {name:string;path:string;directory:boolean;size:number|null};
 type Directory = {path:string;parent:string;entries:FileEntry[]};
@@ -37,7 +39,7 @@ export class FileEditor {
     window.addEventListener('beforeunload',e=>{if(this.dirty()){e.preventDefault();e.returnValue='';}});
   }
   private dirty(){return !!this.document&&this.area.value!==this.document.original;}
-  private refreshDirty(){this.saveButton.disabled=this.saving||!this.dirty();this.fileName.textContent=this.document?`${this.document.path}${this.dirty()?' • Unsaved':''}`:'No file open';}
+  private refreshDirty(){this.saveButton.disabled=this.saving||this.area.readOnly||!this.dirty();this.fileName.textContent=this.document?`${this.document.path}${this.dirty()?' • Unsaved':''}`:'No file open';}
   private async canDiscard(){
     if(this.saving){this.hooks.notify('Wait for the file save to finish.');return false;}
     if(!this.dirty())return true;if(this.confirming)return false;this.confirming=true;
@@ -62,21 +64,48 @@ export class FileEditor {
         const name=document.createElement('span');name.textContent=(entry.directory?'\u25b8 ':'')+entry.name;button.append(name);
         if(!entry.directory){const size=document.createElement('small');size.textContent=entry.size===null?'':entry.size<1024?`${entry.size} B`:`${Math.ceil(entry.size/1024)} KB`;button.append(size);}
         button.onclick=()=>{if(entry.directory)void this.list(entry.path);else void this.open(entry.path);};list.append(button);
+        if (!entry.directory) {
+          const actions = document.createElement('div');
+          actions.className = 'file-transfer-actions';
+          for (const [label, sudo, read] of [['Download',false,false],['Download with sudo',true,false],['Read with sudo',true,true]] as const) {
+            const action = document.createElement('button');
+            action.textContent = label;
+            action.setAttribute('aria-label', `${label}: ${entry.name}`);
+            action.onclick = () => { if (read) void this.open(entry.path, true); else void this.download(entry.path, sudo); };
+            actions.append(action);
+          }
+          list.append(actions);
+        }
       });
       if(!directory.entries.length){const empty=document.createElement('p');empty.textContent='Empty directory';list.append(empty);}
       this.status.textContent=`${directory.entries.length} entries · UTF-8 text · Maximum 1 MiB`;
     }catch(e){if(generation===this.generation)this.status.textContent=String(e);}finally{this.busy=false;}
   }
-  private async open(path:string){
+  private async open(path:string,sudo=false){
+    if(sudo&&!await this.hooks.confirm('Read protected file?','Use this connection�s SSH password with sudo to read this file? Protected files open read-only.'))return;
     if(this.busy)return;this.busy=true;if(!await this.canDiscard()){this.busy=false;return;}this.area.disabled=true;const generation=this.generation;this.status.textContent='Opening file…';
     try{
-      const doc=await this.request<Document>({operation:'read',path});if(generation!==this.generation)return;
+      const doc=await this.request<Document>({operation:sudo?'protected_read':'read',path});if(generation!==this.generation)return;
       this.document={...doc,session:this.session,original:doc.content.replace(/\r\n/g,'\n'),crlf:doc.content.includes('\r\n')&&!/(^|[^\r])\n/.test(doc.content)};
-      this.area.value=this.document.original;this.area.disabled=false;this.refreshDirty();this.area.focus();this.status.textContent='UTF-8 · '+(this.document.crlf?'CRLF':'LF')+' · Ctrl+S to save';
+      this.area.value=this.document.original;this.area.disabled=false;this.area.readOnly=sudo;this.refreshDirty();this.area.focus();this.status.textContent='UTF-8 · '+(this.document.crlf?'CRLF':'LF')+' · Ctrl+S to save';
     }catch(e){if(generation===this.generation)this.status.textContent=String(e);}finally{this.busy=false;this.area.disabled=!this.document;}
   }
+  private async download(path:string,sudo:boolean){
+    if(this.busy||this.saving)return;
+    if(sudo&&!await this.hooks.confirm('Download protected file?','Use this connection�s SSH password with sudo to download this file?'))return;
+    this.busy=true;this.status.textContent='Downloading�';
+    try{
+      const result=await this.request<{data:string}>({operation:'download',path,sudo});
+      const binary=atob(result.data);
+      const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));
+      const destination=await save({defaultPath:path.split(/[\\/]/).pop()||'download'});
+      if(!destination){this.status.textContent='Download cancelled';return;}
+      await writeFile(destination,bytes);
+      this.status.textContent='Download saved';
+    }catch(e){this.status.textContent=String(e);}finally{this.busy=false;}
+  }
   private async save(){
-    const doc=this.document;if(!doc||this.saving||this.busy||!this.dirty())return;this.saving=true;this.refreshDirty();const draft=this.area.value;this.status.textContent='Saving…';
+    const doc=this.document;if(!doc||this.area.readOnly||this.saving||this.busy||!this.dirty())return;this.saving=true;this.refreshDirty();const draft=this.area.value;this.status.textContent='Saving…';
     try{
       const content=doc.crlf?draft.replace(/\n/g,'\r\n'):draft;
       const saved=await this.request<Document>({operation:'write',path:doc.path,content,revision:doc.revision});

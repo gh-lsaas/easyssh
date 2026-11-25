@@ -5,6 +5,8 @@ const MAX_FILE: usize = 1024 * 1024;
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub(crate) enum FileRequest {
+  Download { path: String, #[serde(default)] sudo: bool },
+  ProtectedRead { path: String },
   List {
     path: String,
   },
@@ -20,7 +22,7 @@ pub(crate) enum FileRequest {
 impl FileRequest {
   fn validate(&self) -> Result<(), String> {
     let path = match self {
-      Self::List { path } | Self::Read { path } | Self::Write { path, .. } => path,
+      Self::Download { path, .. } | Self::ProtectedRead { path } | Self::List { path } | Self::Read { path } | Self::Write { path, .. } => path,
     };
     if path.is_empty() || path.len() > 4096 || path.contains('\0') {
       return Err("Invalid file path.".into());
@@ -80,19 +82,36 @@ pub(crate) async fn file_request(
   .await
   .map_err(err)?
 }
-pub(crate) fn remote_operation(session: &Session, request: FileRequest) -> Result<Value, String> {
+pub(crate) fn remote_operation(session: &Session, request: FileRequest, password: Option<&str>) -> Result<Value, String> {
   request.validate()?;
+  match &request {
+    FileRequest::Download { path, sudo: true } | FileRequest::ProtectedRead { path } => {
+      let password = password.filter(|s| !s.is_empty() && !s.contains(['\r','\n'])).ok_or("Sudo requires an SSH password. Key passphrases cannot be used for sudo.")?;
+      let quoted = format!("'{}'", path.replace(char::from(39), "'\"'\"'"));
+      let mut channel = session.channel_session().map_err(err)?;
+      channel.exec(&format!("sudo -S -p '' -- cat -- {quoted}")).map_err(err)?;
+      channel.write_all(format!("{password}\n").as_bytes()).map_err(err)?;
+      channel.send_eof().map_err(err)?;
+      let bytes = transfer_read(&mut channel)?;
+      channel.wait_close().map_err(err)?;
+      if channel.exit_status().map_err(err)? != 0 { return Err("Sudo could not read the file. Check your password and sudo permissions.".into()); }
+      return if matches!(request, FileRequest::ProtectedRead { .. }) { document(path.clone(),bytes) } else { Ok(json!({"data":STANDARD_NO_PAD.encode(bytes)})) };
+    }
+    _ => (),
+  }
   let sftp = session
     .sftp()
     .map_err(|e| format!("SFTP is unavailable: {e}"))?;
   let path = match &request {
-    FileRequest::List { path } | FileRequest::Read { path } | FileRequest::Write { path, .. } => {
+    FileRequest::Download { path, .. } | FileRequest::ProtectedRead { path } | FileRequest::List { path } | FileRequest::Read { path } | FileRequest::Write { path, .. } => {
       path
     }
   };
   let canonical = sftp.realpath(Path::new(path)).map_err(err)?;
   let display = canonical.to_str().ok_or("Path is not UTF-8.")?.to_string();
   match request {
+    FileRequest::ProtectedRead { .. } => unreachable!(),
+    FileRequest::Download { .. } => Ok(json!({"data":STANDARD_NO_PAD.encode(transfer_read(sftp.open(&canonical).map_err(err)?)?)})),
     FileRequest::List { .. } => {
       let mut entries = Vec::new();
       for (path, stat) in sftp
@@ -189,7 +208,7 @@ fn display_path(path: &Path) -> String {
 pub(crate) fn local_operation(home: &Path, request: FileRequest) -> Result<Value, String> {
   request.validate()?;
   let path = match &request {
-    FileRequest::List { path } | FileRequest::Read { path } | FileRequest::Write { path, .. } => {
+    FileRequest::Download { path, .. } | FileRequest::ProtectedRead { path } | FileRequest::List { path } | FileRequest::Read { path } | FileRequest::Write { path, .. } => {
       path
     }
   };
@@ -202,6 +221,8 @@ pub(crate) fn local_operation(home: &Path, request: FileRequest) -> Result<Value
   .map_err(err)?;
   let display = display_path(&canonical);
   match request {
+    FileRequest::ProtectedRead { .. } | FileRequest::Download { sudo: true, .. } => Err("Sudo file access is available for remote SSH sessions only.".into()),
+    FileRequest::Download { .. } => Ok(json!({"data":STANDARD_NO_PAD.encode(transfer_read(fs::File::open(&canonical).map_err(err)?)?)})),
     FileRequest::List { .. } => {
       let mut entries = Vec::new();
       for entry in fs::read_dir(&canonical).map_err(err)?.take(10000) {
@@ -300,4 +321,12 @@ mod tests {
     fs::remove_file(path).unwrap();
     fs::remove_dir(dir).unwrap();
   }
+}
+
+fn transfer_read(reader: impl Read) -> Result<Vec<u8>, String> {
+  const LIMIT: u64 = 32 * 1024 * 1024;
+  let mut bytes = Vec::new();
+  reader.take(LIMIT + 1).read_to_end(&mut bytes).map_err(err)?;
+  if bytes.len() as u64 > LIMIT { return Err("Downloads support files up to 32 MiB.".into()); }
+  Ok(bytes)
 }

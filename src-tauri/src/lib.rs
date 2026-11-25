@@ -409,7 +409,7 @@ fn run_session(
         Ok(Action::Resize(c, r)) => size = Some((c, r)),
         Ok(Action::Files(request, reply)) => {
           session.set_blocking(true);
-          let result = files::remote_operation(&session, request);
+          let result = files::remote_operation(&session, request, if p.auth == "password" { Some(&secret) } else { None });
           session.set_blocking(false);
           let _ = reply.send(result);
         }
@@ -498,6 +498,8 @@ fn disconnect(state: State<AppState>, id: String) -> Result<(), String> {
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_fs::init())
     .setup(|app| {
       #[cfg(desktop)]
       app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
