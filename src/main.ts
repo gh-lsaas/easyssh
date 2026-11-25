@@ -60,7 +60,7 @@ $('#app').innerHTML = `
   <label id="key-field" hidden>Private key path<input name="keyPath" placeholder="C:\\Users\\you\\.ssh\\id_ed25519"><small>OpenSSH or PEM private key. The file stays on your disk.</small></label>
   <label><span id="secret-label">Password</span><input name="secret" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved secret"></label>
   <label class="check"><input name="clearSecret" type="checkbox"> Remove saved password / key passphrase (use an unencrypted key without a passphrase)</label>
-  <label class="check"><input name="sudoAutofill" type="checkbox"> Autofill sudo with the SSH password</label><p class="hint">Trusted hosts only. Any remote program can imitate a sudo prompt. Sends once per session for the standard English prompt; key passphrases are never used.</p>
+  <label class="check"><input name="sudoAutofill" type="checkbox"> Autofill sudo with the SSH password</label><p class="hint">Trusted hosts only. Any remote program can imitate a sudo prompt. Sends once per command for the standard English prompt; key passphrases are never used.</p>
   <label class="check"><input name="remember" type="checkbox" checked> Save secret in the operating system credential store</label><p class="hint">Unsaved secrets are requested when you connect. Blank fields preserve an existing saved secret.</p>
   <p class="form-error" id="form-error" role="alert"></p><div class="dialog-actions"><button type="button" id="delete-connection" class="danger" hidden>Delete connection</button><button type="button" class="close-dialog">Cancel</button><button class="primary" type="submit">Save</button></div></form></dialog>
   <dialog id="confirm"><div class="dialog-heading"><h2 id="confirm-title"></h2></div><p id="confirm-message"></p><code id="fingerprint"></code><div class="dialog-actions"><button id="confirm-no">Cancel</button><button class="primary" id="confirm-yes">Continue</button></div></dialog>
@@ -350,12 +350,15 @@ function clearDropPreview() {
   $('#tabs').classList.remove('drop-end');
 }
 function cancelTabDrag() {
+  if (tabDrag && $('#tabs').hasPointerCapture(tabDrag.pointer)) $('#tabs').releasePointerCapture(tabDrag.pointer);
   if (tabDrag?.moved) suppressTabClickUntil = Date.now() + 300;
   tabDrag = null; dragLabel.hidden = true; clearDropPreview(); document.body.classList.remove('dragging-tab');
 }
+$('#tabs').addEventListener('dragstart', e => e.preventDefault());
 $('#tabs').addEventListener('pointerdown', e => {
   if (e.button !== 0 || (e.target as HTMLElement).closest('[data-close]')) return;
   const tab = (e.target as HTMLElement).closest<HTMLElement>('[data-session-tab]'); if (!tab) return;
+  $('#tabs').setPointerCapture(e.pointerId);
   tabDrag = {id:tab.dataset.sessionTab!, pointer:e.pointerId, x:e.clientX, y:e.clientY, moved:false, drop:null};
 });
 document.addEventListener('pointermove', e => {
@@ -383,7 +386,7 @@ document.addEventListener('pointermove', e => {
   const x = (e.clientX - rect.left) / rect.width, y = (e.clientY - rect.top) / rect.height;
   const distances: [Edge,number][] = [['left',x],['right',1-x],['top',y],['bottom',1-y]];
   distances.sort((a,b) => a[1]-b[1]);
-  const edge: Edge | 'center' = distances[0][1] < .25 ? distances[0][0] : 'center';
+  const edge: Edge | 'center' = distances[0][1] < .33 ? distances[0][0] : 'center';
   drag.drop = {kind:'pane', target:pane.dataset.pane!,edge};
   const preview = $('#drop-preview'); preview.hidden = false;
   preview.textContent = edge === 'center' ? 'Move here' : `Split ${edge}`;

@@ -400,6 +400,7 @@ fn run_session(
       match rx.try_recv() {
         Err(mpsc::TryRecvError::Disconnected) => return Ok(()),
         Ok(Action::Input(bytes)) => {
+          sudo_prompt.user_input(&bytes);
           if pending.len() + bytes.len() > 4 * 1024 * 1024 {
             return Err("Input buffer exceeded.".into());
           }
