@@ -12,7 +12,7 @@ import '@xterm/xterm/css/xterm.css';
 import './style.css';
 import { startUpdates } from './updates';
 
-type Profile = { id: string; name: string; host: string; port: number; username: string; auth: string; keyPath: string; group: string };
+type Profile = { id: string; name: string; host: string; port: number; username: string; auth: string; keyPath: string; group: string; sudoAutofill?: boolean };
 type Session = { kind: 'ssh' | 'local'; id: string; profile: Profile; terminal: Terminal; fit: FitAddon; element: HTMLElement; status: string; connectedAt?: number; allowMultilinePaste?: boolean };
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector<T>(s)!;
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -59,6 +59,7 @@ $('#app').innerHTML = `
   <label>Authentication<select name="auth"><option value="password">Password</option><option value="key">Private key</option></select></label>
   <label id="key-field" hidden>Private key path<input name="keyPath" placeholder="C:\\Users\\you\\.ssh\\id_ed25519"><small>OpenSSH or PEM private key. The file stays on your disk.</small></label>
   <label><span id="secret-label">Password</span><input name="secret" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved secret"></label>
+  <label class="check"><input name="sudoAutofill" type="checkbox"> Autofill sudo with the SSH password</label><p class="hint">Trusted hosts only. Any remote program can imitate a sudo prompt. Sends once per session for the standard English prompt; key passphrases are never used.</p>
   <label class="check"><input name="remember" type="checkbox" checked> Save secret in the operating system credential store</label><p class="hint">Unsaved secrets are requested when you connect. Blank fields preserve an existing saved secret.</p>
   <p class="form-error" id="form-error" role="alert"></p><div class="dialog-actions"><button type="button" id="delete-connection" class="danger" hidden>Delete connection</button><button type="button" class="close-dialog">Cancel</button><button class="primary" type="submit">Save</button></div></form></dialog>
   <dialog id="confirm"><div class="dialog-heading"><h2 id="confirm-title"></h2></div><p id="confirm-message"></p><code id="fingerprint"></code><div class="dialog-actions"><button id="confirm-no">Cancel</button><button class="primary" id="confirm-yes">Continue</button></div></dialog>
@@ -122,6 +123,7 @@ function confirmAction(title: string, message: string, fingerprint = ''): Promis
 function edit(p?: Profile) {
   const form = $<HTMLFormElement>('#connection-form'); form.reset(); $('#form-error').textContent = '';
   for (const key of ['id','name','host','port','username','group','auth','keyPath'] as const) (form.elements.namedItem(key) as HTMLInputElement).value = String(p?.[key] ?? (key === 'port' ? 22 : key === 'auth' ? 'password' : ''));
+  $<HTMLInputElement>('[name="sudoAutofill"]').checked = p?.sudoAutofill ?? false;
   if (platformInfo.mobile) $<HTMLInputElement>('[name="remember"]').checked = platformInfo.os === 'android';
   $('#editor-title').textContent = p ? 'Edit connection' : 'New connection'; $('#delete-connection').hidden = !p; authChange(); $<HTMLDialogElement>('#editor').showModal();
 }
@@ -144,7 +146,7 @@ document.querySelectorAll<HTMLButtonElement>('.close-dialog').forEach(b => b.onc
 const ephemeral = new Map<string,string>();
 $('#connection-form').onsubmit = async e => {
   e.preventDefault(); const form = e.currentTarget as HTMLFormElement; const data = new FormData(form); const get = (k:string) => String(data.get(k) ?? '');
-  const connection: Profile = {id:get('id'),name:get('name').trim(),host:get('host').trim(),port:Number(get('port')),username:get('username').trim(),auth:get('auth'),keyPath:get('keyPath').trim(),group:get('group').trim()};
+  const connection: Profile = {id:get('id'),name:get('name').trim(),host:get('host').trim(),port:Number(get('port')),username:get('username').trim(),auth:get('auth'),keyPath:get('keyPath').trim(),group:get('group').trim(),sudoAutofill:data.has('sudoAutofill')};
   const submit = form.querySelector<HTMLButtonElement>('[type="submit"]')!; submit.disabled = true;
   try { const p = await invoke<Profile>('save_profile',{connection,secret:data.has('remember') ? get('secret') : null}); ephemeral.delete(p.id); if (!data.has('remember') && get('secret')) ephemeral.set(p.id,get('secret')); selected = p.id; form.reset(); $<HTMLDialogElement>('#editor').close(); await reload(); } catch(e) { $('#form-error').textContent = String(e); } finally { submit.disabled = false; }
 };

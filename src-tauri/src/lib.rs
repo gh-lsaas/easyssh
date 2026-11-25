@@ -1,5 +1,6 @@
 mod files;
 mod local;
+mod sudo_prompt;
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -25,6 +26,8 @@ struct Profile {
   auth: String,
   key_path: String,
   group: String,
+  #[serde(default)]
+  sudo_autofill: bool,
 }
 #[derive(Default, Serialize, Deserialize)]
 struct Store {
@@ -379,6 +382,7 @@ fn run_session(
       status: "Connected".into(),
     },
   );
+  let mut sudo_prompt = sudo_prompt::Detector::default();
   let mut pending = Vec::new();
   let mut offset = 0;
   let mut size = None;
@@ -425,6 +429,12 @@ fn run_session(
       match channel.read(&mut buf) {
         Ok(0) => break,
         Ok(n) => {
+          if p.sudo_autofill && p.auth == "password" && !secret.is_empty()
+            && !secret.contains(['\r', '\n']) && pending.is_empty()
+            && sudo_prompt.feed(&buf[..n], &p.username) {
+            pending.extend_from_slice(secret.as_bytes());
+            pending.push(b'\n');
+          }
           app
             .emit(
               "ssh-data",
