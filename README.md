@@ -132,3 +132,25 @@ Plain `pnpm tauri build` builds the desktop packages for your OS, then an ARM64 
 Push `main` to the GitHub repository configured as `origin`. Run the **Release** workflow manually from the Actions tab to check all four builds and download their artifacts. To publish, run `pnpm release` from a clean `main` checkout. It bumps the patch version across the manifests, commits, and pushes `main` and the matching tag together. Pass `minor` or `major` for those increments. The tag triggers Windows, Linux, macOS ARM64, and Android ARM64 builds. GitHub publishes the packages on the repository's Releases page after all four builds pass.
 
 For an installable Android download, set the repository's Actions secrets `ANDROID_KEYSTORE_BASE64` (the base64-encoded keystore), `ANDROID_KEYSTORE_PASSWORD`, and `ANDROID_KEY_ALIAS`. Set `ANDROID_KEY_PASSWORD` if the key has a different password. Keep the same signing key for future upgrades. The release workflow requires these secrets and verifies the APK signature and alignment before uploading it.
+
+## Agent access through MCP
+
+Open Settings and enable the local agent bridge. Keep easyssh open. Copy its JSON configuration into the `EASYSSH_MCP_CONFIG` environment variable in your MCP client configuration. Run the stdio server with Node.js 24:
+
+```json
+{
+  "mcpServers": {
+    "easyssh": {
+      "command": "node",
+      "args": ["R:/eassh/scripts/mcp-server.mjs"],
+      "env": {
+        "EASYSSH_MCP_CONFIG": "PASTE_THE_JSON_FROM_SETTINGS_HERE"
+      }
+    }
+  }
+}
+```
+
+Use an absolute path for your checkout. The environment value is a JSON string, so escape its quotes when editing client configuration manually. A fresh token and port are generated whenever access is enabled. The bridge listens on loopback only and closes when disabled or when easyssh exits. Restart the MCP client after changing the configuration.
+
+Tools list saved connections and sessions, open saved connections, read the last 200 terminal lines, and type terminal input. Passwords remain in easyssh's credential store. Terminal output can contain sensitive information printed by commands. Approved mode asks before every input and connection, including sudo commands. The optional unattended mode permits commands and connection requests until disabled or the app exits. Host fingerprint verification still applies. Only enable unattended mode for agents you trust with your servers. Disable access in Settings to stop further input. This release supplies a local stdio bridge for MCP clients on the same computer.

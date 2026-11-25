@@ -200,3 +200,8 @@ body.dragging-tab { cursor: grabbing; user-select: none; }
 
 .file-transfer-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 4px 10px; }
 #file-list .file-transfer-actions button { width: auto; min-height: 36px; border: 1px solid #444; padding: 4px 6px; font-size: 10px; }
+
+#settings-button { margin: 10px; min-height: 44px; flex-shrink: 0; }
+#settings { width: min(560px,calc(100vw - 24px)); }
+#settings section { margin-bottom: 24px; }
+#bridge-config { width: 100%; min-height: 110px; font: 12px var(--mono); }

@@ -1,4 +1,5 @@
 mod files;
+mod bridge;
 mod local;
 mod sudo_prompt;
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
@@ -531,6 +532,7 @@ pub fn run() {
           }
         })?;
       }
+      app.manage(bridge::Bridge::default());
       app.manage(AppState {
         store: Mutex::new(store),
         sessions: Mutex::new(HashMap::new()),
@@ -538,6 +540,9 @@ pub fn run() {
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
+      bridge::bridge_enable,
+      bridge::bridge_poll,
+      bridge::bridge_reply,
       local::list_shells,
       local::connect_local,
       files::file_request,

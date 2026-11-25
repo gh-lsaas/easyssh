@@ -82,7 +82,7 @@ export class FileEditor {
     }catch(e){if(generation===this.generation)this.status.textContent=String(e);}finally{this.busy=false;}
   }
   private async open(path:string,sudo=false){
-    if(sudo&&!await this.hooks.confirm('Read protected file?','Use this connection’s SSH password with sudo to read this file? Protected files open read-only.'))return;
+    if(sudo&&!await this.hooks.confirm('Read protected file?','Use the SSH password for this connection with sudo to read this file? Protected files open read-only.'))return;
     if(this.busy)return;this.busy=true;if(!await this.canDiscard()){this.busy=false;return;}this.area.disabled=true;const generation=this.generation;this.status.textContent='Opening fileâ€¦';
     try{
       const doc=await this.request<Document>({operation:sudo?'protected_read':'read',path});if(generation!==this.generation)return;
@@ -92,7 +92,7 @@ export class FileEditor {
   }
   private async download(path:string,sudo:boolean){
     if(this.busy||this.saving)return;
-    if(sudo&&!await this.hooks.confirm('Download protected file?','Use this connection’s SSH password with sudo to download this file?'))return;
+    if(sudo&&!await this.hooks.confirm('Download protected file?','Use the SSH password for this connection with sudo to download this file?'))return;
     this.busy=true;this.status.textContent='Downloading…';
     try{
       const result=await this.request<{data:string}>({operation:'download',path,sudo});

@@ -67,6 +67,66 @@ $('#app').innerHTML = `
   <dialog id="secret-dialog"><form id="secret-form" autocomplete="off"><h2>Session credentials</h2><label id="session-secret-label" for="session-secret">Password</label><input id="session-secret" type="password" autocomplete="new-password"><label class="check"><input id="session-remember" type="checkbox" checked> Save for future connections</label><p id="session-secret-error" class="form-error" role="alert"></p><p class="hint">Saved credentials are used automatically. Enter a replacement only when needed.</p><div class="dialog-actions"><button type="button" id="secret-cancel">Cancel</button><button type="submit" class="primary">Connect</button></div></form></dialog>
   <dialog id="paste-dialog"><h2>Paste multiple lines?</h2><p>This text contains line breaks and may run commands on the server. Approval will be remembered for this session.</p><label class="check"><input type="checkbox" id="paste-always"> Always allow multiline pastes in all sessions</label><div class="dialog-actions"><button id="paste-cancel">Cancel</button><button id="paste-approve" class="primary">Paste</button></div></dialog>
   <div id="toast" role="status" hidden></div>`;
+const settingsButton=document.createElement('button');
+settingsButton.id='settings-button';settingsButton.textContent='Settings';
+$('#connections-panel').append(settingsButton);
+const settings=document.createElement('dialog');settings.id='settings';
+settings.innerHTML=`<h2>Settings</h2><section id="update-settings"><h3>Updates</h3></section><h3>Agent access (MCP)</h3><label class="check"><input id="bridge-enabled" type="checkbox"> Enable local agent bridge</label><label class="check"><input id="bridge-unattended" type="checkbox"> Allow agent actions without approval until disabled</label><p class="hint">Agents can read visible terminal output and control your SSH sessions. Approval mode asks before every input and new connection. Keep the connection token private.</p><textarea id="bridge-config" readonly aria-label="Agent connection configuration" hidden></textarea><p id="bridge-status" role="status">Agent access disabled</p><button id="settings-close">Close</button>`;
+document.body.append(settings);
+settingsButton.onclick=()=>settings.showModal();
+$('#settings-close').onclick=()=>settings.close();
+let bridgeEnabled=false, unattended=false, bridgeBusy=false;
+$('#bridge-unattended').onchange=async()=>{
+ const checkbox=$<HTMLInputElement>('#bridge-unattended');
+ if(checkbox.checked && !await confirmAction('Allow unattended agent access?','Agents can execute commands, including sudo using saved credentials, without further approval until you disable the bridge.'))checkbox.checked=false;
+ unattended=checkbox.checked;
+};
+$('#bridge-enabled').onchange=async()=>{
+ const checkbox=$<HTMLInputElement>('#bridge-enabled');
+ try {
+  const config=await invoke<string|null>('bridge_enable',{enabled:checkbox.checked});
+  bridgeEnabled=checkbox.checked;
+  const area=$<HTMLTextAreaElement>('#bridge-config');area.value=config??'';area.hidden=!config;
+  $('#bridge-status').textContent=bridgeEnabled?'Agent bridge enabled. Copy the configuration to the MCP launcher.':'Agent access disabled';
+  settingsButton.textContent=bridgeEnabled?'Settings · Agent access on':'Settings';
+ }catch(e){checkbox.checked=false;bridgeEnabled=false;notify(e);}
+};
+setInterval(async()=>{
+ if(!bridgeEnabled||bridgeBusy)return;bridgeBusy=true;
+ try {
+  const requests=await invoke<{id:string;tool:string;arguments:Record<string,unknown>;expires:number}[]>('bridge_poll');
+  for(const request of requests){
+   let result:unknown;
+   try {
+    if(!bridgeEnabled||Date.now()>request.expires)throw new Error('Bridge disabled or request expired');
+    const args=request.arguments??{};
+    if(request.tool==='list_connections')result=profiles.map(p=>({id:p.id,name:p.name,host:p.host,username:p.username}));
+    else if(request.tool==='list_sessions')result=sessions.map(s=>({id:s.id,name:s.profile.name,status:s.status}));
+    else if(request.tool==='open_connection'){
+     const p=profiles.find(p=>p.id===args.id);if(!p)throw new Error('Unknown connection');
+     if(!unattended&&!await confirmAction('Agent wants to connect',`Open ${p.name} (${p.username}@${p.host})?`))throw new Error('Denied');
+     if(!bridgeEnabled||Date.now()>request.expires)throw new Error('Bridge disabled or request expired');
+     await start(p.id);result=sessions.filter(s=>s.profile.id===p.id).map(s=>({id:s.id,status:s.status}));
+    }else{
+     const session=sessions.find(s=>s.id===args.id);if(!session)throw new Error('Unknown session');
+     if(request.tool==='read_terminal'){
+      const buffer=session.terminal.buffer.active;const lines=[];
+      for(let i=Math.max(0,buffer.length-200);i<buffer.length;i++)lines.push(buffer.getLine(i)?.translateToString(true)??'');
+      result=lines.join('\n');
+     }else{
+      if(typeof args.text!=='string'||args.text.length>8192||session.status!=='Connected')throw new Error('Invalid terminal input');
+      if(!unattended&&!await confirmAction('Agent terminal input',`${session.profile.name}\n${args.text}`))throw new Error('Denied');
+      if(!bridgeEnabled||Date.now()>request.expires)throw new Error('Bridge disabled or request expired');
+      activate(session.id);
+      for(const character of args.text){if(!bridgeEnabled||Date.now()>request.expires)throw new Error('Input stopped');await invoke('input',{id:session.id,data:character});await new Promise(resolve=>setTimeout(resolve,12));}
+      result={sent:true};
+     }
+    }
+   }catch(e){result={error:String(e)};}
+   await invoke('bridge_reply',{id:request.id,result});
+  }
+ }catch(e){notify(e);}finally{bridgeBusy=false;}
+},250);
 let toastTimer: ReturnType<typeof setTimeout>;
 function notify(message: unknown) { $('#toast').textContent = String(message); $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 6000); }
 async function reload() { profiles = await invoke<Profile[]>('list_profiles'); if (!profiles.some(p => p.id === selected)) selected = profiles[0]?.id ?? ''; renderHosts(); }

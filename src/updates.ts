@@ -17,7 +17,7 @@ export function startUpdates(os: string, mobile: boolean) {
   const checkButton = document.createElement('button');
   checkButton.id = 'check-updates';
   checkButton.textContent = 'Check for updates';
-  document.querySelector('#connections-panel')!.append(checkButton);
+  document.querySelector('#update-settings')!.append(checkButton);
   checkButton.onclick = () => { void checkUpdates(true); };
   function showStatus(text: string) {
     message.textContent = text;
